@@ -326,7 +326,11 @@ def build_html() -> str:
       color: var(--muted);
       background: transparent;
       cursor: pointer;
-      transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+      transition:
+        background 0.2s ease,
+        color 0.2s ease,
+        transform 0.2s ease,
+        border-color 0.2s ease;
     }}
     .nav-button.active {{
       color: #17351f;
@@ -480,7 +484,11 @@ def build_html() -> str:
       padding: 14px 16px;
       font-size: 15px;
       outline: none;
-      transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, transform 0.18s ease;
+      transition:
+        border-color 0.18s ease,
+        box-shadow 0.18s ease,
+        background 0.18s ease,
+        transform 0.18s ease;
     }}
     input:focus, textarea:focus, select:focus {{
       border-color: rgba(35, 196, 126, 0.62);
@@ -503,7 +511,11 @@ def build_html() -> str:
       padding: 16px;
       background: rgba(255, 255, 255, 0.58);
       cursor: pointer;
-      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+      transition:
+        transform 0.2s ease,
+        border-color 0.2s ease,
+        box-shadow 0.2s ease,
+        background 0.2s ease;
     }}
     .provider-card:hover {{
       transform: translateY(-2px);
@@ -558,7 +570,11 @@ def build_html() -> str:
       color: #342917;
       box-shadow: none;
       cursor: pointer;
-      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+      transition:
+        transform 0.18s ease,
+        box-shadow 0.18s ease,
+        border-color 0.18s ease,
+        background 0.18s ease;
     }}
     .preset-button:hover {{
       transform: translateY(-2px);
@@ -593,7 +609,11 @@ def build_html() -> str:
       background: linear-gradient(135deg, var(--accent), var(--accent-deep));
       cursor: pointer;
       box-shadow: 0 16px 32px rgba(20, 154, 97, 0.22);
-      transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease, background 0.18s ease;
+      transition:
+        transform 0.18s ease,
+        box-shadow 0.18s ease,
+        opacity 0.18s ease,
+        background 0.18s ease;
     }}
     button:not(.nav-button):not(.provider-card):not(.preset-button):hover {{
       transform: translateY(-2px);
@@ -915,7 +935,10 @@ def build_html() -> str:
       <section class="panel">
         <span class="panel-badge">Scene Composer</span>
         <h2 class="section-title">生成</h2>
-        <p class="section-copy">先确定解析 Provider，再编排场景描述。左侧专注输入，右侧专注结果，不把配置和创作混在一起。</p>
+        <p class="section-copy">
+          先确定解析 Provider，再编排场景描述。左侧专注输入，右侧专注结果，
+          不把配置和创作混在一起。
+        </p>
 
         <label for="provider">Provider</label>
         <div class="provider-grid" aria-label="Provider 选择">
@@ -941,7 +964,10 @@ def build_html() -> str:
         <label for="prompt">动画描述</label>
         <div class="prompt-shell">
           <textarea id="prompt">{DEFAULT_PROMPT}</textarea>
-          <div class="helper">直接描述布局、主体、动作和色调，例如“上方是一台旋转的机器人，下方是进度条，色调为绿色”。</div>
+          <div class="helper">
+            直接描述布局、主体、动作和色调，例如
+            “上方是一台旋转的机器人，下方是进度条，色调为绿色”。
+          </div>
         </div>
 
         <div class="preset-grid">
@@ -1009,13 +1035,19 @@ def build_html() -> str:
       <section class="panel">
         <span class="panel-badge">Preview Stage</span>
         <h2 class="section-title">预览</h2>
-        <p class="section-copy">这里展示当前生成结果。成功生成后，右侧会始终保持最新的 APNG 预览和导出状态。</p>
+        <p class="section-copy">
+          这里展示当前生成结果。成功生成后，右侧会始终保持最新的 APNG
+          预览和导出状态。
+        </p>
         <div class="preview" id="preview">
           <div class="preview-stage">
             <div class="preview-empty">
               <div class="pixel-orb" aria-hidden="true"></div>
               <strong>等待第一张像素动画</strong>
-              <p>输入描述后点击“生成 APNG”。预览区域会保留高对比舞台，让透明边缘和细小动作更容易观察。</p>
+              <p>
+                输入描述后点击“生成 APNG”。预览区域会保留高对比舞台，
+                让透明边缘和细小动作更容易观察。
+              </p>
             </div>
             <div class="preview-meta">
               <span>Alpha Background</span>
@@ -1031,7 +1063,10 @@ def build_html() -> str:
       <section class="panel">
         <span class="panel-badge">Provider Settings</span>
         <h2 class="section-title">API 配置</h2>
-        <p class="section-copy">把密钥和可选 Base URL 放到独立视图，保持生成区干净。这里做的是连接管理，不干扰创作流程。</p>
+        <p class="section-copy">
+          把密钥和可选 Base URL 放到独立视图，保持生成区干净。
+          这里做的是连接管理，不干扰创作流程。
+        </p>
 
         <div class="settings-header-grid">
           <div class="settings-box">
@@ -1043,7 +1078,10 @@ def build_html() -> str:
           </div>
           <div class="settings-note">
             <strong>配置策略</strong>
-            <p>页面填写的 Key 会优先使用；如果留空，程序仍会回退到当前 shell 的环境变量。这样既能图形化操作，也不破坏现有 CLI 工作流。</p>
+            <p>
+              页面填写的 Key 会优先使用；如果留空，程序仍会回退到当前 shell
+              的环境变量。这样既能图形化操作，也不破坏现有 CLI 工作流。
+            </p>
           </div>
         </div>
 

@@ -10,11 +10,17 @@ from typing import Final
 
 from PIL import Image, ImageDraw
 
+from pixel_apng.composition_models import (
+    BackgroundDecorationMode,
+    RenderElementPlan,
+    RenderPlan,
+    TrailRenderMode,
+)
+from pixel_apng.composition_planner import CompositionPlanner
 from pixel_apng.models import (
     MotionName,
     PaletteName,
     RegionName,
-    RegionSpec,
     SceneSpec,
     SubjectName,
 )
@@ -176,74 +182,109 @@ class ProceduralObjectSpec:
 class PixelRenderer:
     """Render scene specs into raster frames."""
 
+    def __init__(self, planner: CompositionPlanner | None = None) -> None:
+        """Initialize the renderer with an optional composition planner."""
+        self._planner = planner or CompositionPlanner()
+
     def render_frames(self, scene: SceneSpec) -> list[Image.Image]:
         """Render all frames for a scene."""
-        total_frames = max(1, int(scene.animation.fps * scene.animation.duration_seconds))
+        render_plan = self._planner.build_plan(scene)
+        return self.render_plan_frames(
+            render_plan,
+            fps=scene.animation.fps,
+            duration_seconds=scene.animation.duration_seconds,
+        )
+
+    def render_plan_frames(
+        self,
+        render_plan: RenderPlan,
+        fps: int,
+        duration_seconds: float,
+    ) -> list[Image.Image]:
+        """Render all frames for a planner-produced render plan."""
+        total_frames = max(1, int(fps * duration_seconds))
         frames: list[Image.Image] = []
         for frame_index in range(total_frames):
-            frames.append(self._render_frame(scene, frame_index, total_frames))
+            frames.append(self._render_plan_frame(render_plan, frame_index, total_frames))
         return frames
 
-    def _render_frame(self, scene: SceneSpec, frame_index: int, total_frames: int) -> Image.Image:
-        """Render a single animation frame."""
-        width = scene.canvas.width
-        height = scene.canvas.height
-        palette = PALETTES[scene.palette.name]
-        image = Image.new("RGBA", (width, height), palette["bg"])
+    def _render_plan_frame(
+        self,
+        render_plan: RenderPlan,
+        frame_index: int,
+        total_frames: int,
+    ) -> Image.Image:
+        """Render a single frame from a render plan."""
+        palette = PALETTES[render_plan.palette_name]
+        image = Image.new(
+            "RGBA",
+            (render_plan.canvas_width, render_plan.canvas_height),
+            palette["bg"],
+        )
         draw = ImageDraw.Draw(image)
-        self._draw_background(scene, draw, palette, frame_index)
-        for region in scene.regions:
-            self._draw_region(scene, draw, palette, region, frame_index, total_frames)
-        output_size = (width * scene.canvas.scale, height * scene.canvas.scale)
+        self._draw_background_from_plan(render_plan, draw, palette, frame_index)
+        for element in sorted(render_plan.elements, key=lambda item: item.z_order):
+            self._draw_render_element(draw, palette, element, frame_index, total_frames)
+        output_size = (
+            render_plan.canvas_width * render_plan.output_scale,
+            render_plan.canvas_height * render_plan.output_scale,
+        )
         return image.resize(output_size, Image.Resampling.NEAREST)
 
-    def _draw_background(
+    def _draw_background_from_plan(
         self,
-        scene: SceneSpec,
+        render_plan: RenderPlan,
         draw: ImageDraw.ImageDraw,
         palette: Palette,
         frame_index: int,
     ) -> None:
-        """Draw the animated transparent background."""
-        if not scene.canvas.transparent_background:
-            draw.rectangle([0, 0, scene.canvas.width, scene.canvas.height], fill=palette["bg"])
-        if scene.palette.name == PaletteName.RETRO:
-            for y_coord in range(frame_index % 2, scene.canvas.height, 4):
-                draw.line([0, y_coord, scene.canvas.width, y_coord], fill=(255, 255, 255, 18))
+        """Draw the animated background selected by the planner."""
+        if render_plan.background_policy.decoration_mode == BackgroundDecorationMode.SCANLINE:
+            for y_coord in range(frame_index % 2, render_plan.canvas_height, 4):
+                draw.line([0, y_coord, render_plan.canvas_width, y_coord], fill=(255, 255, 255, 18))
             return
-        sparkle_x = (frame_index * 7) % scene.canvas.width
-        sparkle_y = 12 + (frame_index * 3) % max(1, scene.canvas.height // 2)
+        if render_plan.background_policy.decoration_mode != BackgroundDecorationMode.SPARKLE:
+            return
+        sparkle_x = (frame_index * 7) % render_plan.canvas_width
+        sparkle_y = 12 + (frame_index * 3) % max(1, render_plan.canvas_height // 2)
         draw.point((sparkle_x, sparkle_y), fill=palette["white"])
 
-    def _draw_region(
+    def _draw_render_element(
         self,
-        scene: SceneSpec,
         draw: ImageDraw.ImageDraw,
         palette: Palette,
-        region: RegionSpec,
+        element: RenderElementPlan,
         frame_index: int,
         total_frames: int,
     ) -> None:
-        """Draw one scene region according to its semantic type."""
-        bounds = self._region_box(scene, region.name)
-        if region.subject == SubjectName.PROGRESS_BAR:
+        """Draw one element from the render plan."""
+        bounds = (
+            element.box.left,
+            element.box.top,
+            element.box.right,
+            element.box.bottom,
+        )
+        if element.subject == SubjectName.PROGRESS_BAR:
             self._draw_progress_bar(draw, bounds, palette, frame_index, total_frames)
             return
-        if region.subject == SubjectName.TEXT:
-            self._draw_text_block(draw, bounds, palette, region.content, frame_index, region.motion)
+        if element.subject == SubjectName.TEXT:
+            self._draw_text_block(
+                draw,
+                bounds,
+                palette,
+                element.content,
+                frame_index,
+                element.motion,
+            )
             return
-        self._draw_prompt_object(draw, bounds, palette, region.content, frame_index, region.motion)
-
-    def _region_box(self, scene: SceneSpec, region_name: RegionName) -> Bounds:
-        """Convert a named region into pixel-space bounds."""
-        left_ratio, top_ratio, right_ratio, bottom_ratio = _REGION_BOUNDS[region_name]
-        width = scene.canvas.width
-        height = scene.canvas.height
-        return (
-            int(width * left_ratio),
-            int(height * top_ratio),
-            int(width * right_ratio),
-            int(height * bottom_ratio),
+        self._draw_prompt_object(
+            draw,
+            bounds,
+            palette,
+            element.content,
+            frame_index,
+            element.motion,
+            element.trail_policy.mode,
         )
 
     def _draw_progress_bar(
@@ -291,11 +332,12 @@ class PixelRenderer:
         content: str,
         frame_index: int,
         motion: MotionName,
+        trail_mode: TrailRenderMode,
     ) -> None:
         """Render a procedural object derived from the region content."""
         spec = self._build_object_spec(content, motion)
         grid = self._build_sprite_grid(spec)
-        self._draw_motion_trail(draw, bounds, palette, spec, frame_index, motion)
+        self._draw_motion_trail(draw, bounds, palette, spec, frame_index, motion, trail_mode)
         self._draw_grid_sprite(draw, bounds, palette, grid, spec, frame_index)
 
     def _build_object_spec(self, content: str, motion: MotionName) -> ProceduralObjectSpec:
@@ -504,17 +546,21 @@ class PixelRenderer:
         spec: ProceduralObjectSpec,
         frame_index: int,
         motion: MotionName,
+        trail_mode: TrailRenderMode,
     ) -> None:
         """Draw a lightweight motion cue behind the object."""
+        if trail_mode == TrailRenderMode.DISABLED:
+            return
         left, top, right, bottom = bounds
         center_y = (top + bottom) // 2
         if motion == MotionName.RUN:
             trail_width = 4 + spec.appendage_length
             start_x = max(left + 2, right // 2 - trail_width)
+            trail_length = 3 if trail_mode == TrailRenderMode.SHORT else 6
             draw.line(
-                [start_x, center_y + 4, start_x - 6, center_y + 2],
+                [start_x, center_y + 4, start_x - trail_length, center_y + 2],
                 fill=palette["accent_dark"],
-                width=2,
+                width=1 if trail_mode == TrailRenderMode.SOFT else 2,
             )
         elif motion == MotionName.SPIN:
             draw.arc(
@@ -547,11 +593,10 @@ class PixelRenderer:
         usable_height = max(1, bottom - top - 4)
         cell_size = max(1, min(usable_width // grid_width, usable_height // grid_height))
         sprite_width = grid_width * cell_size
-        sprite_height = grid_height * cell_size
         sway = self._compute_horizontal_sway(spec, frame_index)
         bob = self._compute_vertical_bob(spec, frame_index)
         origin_x = left + (usable_width - sprite_width) // 2 + 2 + sway
-        origin_y = top + (usable_height - sprite_height) // 2 + 2 + bob
+        origin_y = top + bob
         color_map = {1: palette["accent"], 2: palette["accent_dark"], 3: palette["white"]}
         for y_coord, row in enumerate(grid):
             for x_coord, value in enumerate(row):

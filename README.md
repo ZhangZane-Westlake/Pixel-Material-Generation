@@ -13,10 +13,11 @@ into a transparent pixel-art APNG you can drop into video editing software.
 Pipeline:
 
 1. Parse the prompt into a structured `SceneSpec` using a provider model.
-2. Convert each prompt clause into a procedural object blueprint.
-3. Render pixel frames locally with Pillow.
-4. Export the result as APNG.
-5. Open the result in a native macOS GUI when needed.
+2. Composition planner: score candidate layouts and choose a scene composition.
+3. Convert the chosen composition into a `RenderPlan`.
+4. Render pixel frames locally with Pillow from the `RenderPlan`.
+5. Export the result as APNG.
+6. Open the result in a native macOS GUI when needed.
 
 ## Default provider
 
@@ -76,6 +77,10 @@ provider cards, prompt presets, and separate `生成器` / `设置` views so API
 is not mixed into the generation workspace.
 
 ## Prompt understanding
+
+LLM only parses the prompt into a semantic `SceneSpec`. The provider does not
+generate the final pixel artwork directly. Composition planning and rendering
+happen locally, which keeps the rendering path deterministic and testable.
 
 The structured scene parser supports:
 
