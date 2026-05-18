@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pixel-apng"
+version = "0.1.0"
+description = "Generate pixel-style APNG animations from natural-language prompts."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Zane" }]
+dependencies = [
+    "anthropic>=0.92.0",
+    "openai>=1.0.0",
+    "pillow>=10.0.0",
+    "pydantic>=2.0.0",
+    "pyobjc>=11.0.0; sys_platform == 'darwin'",
+    "pywebview>=6.0.0",
+    "typer>=0.12.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.10.0",
+    "pytest>=8.0.0",
+    "ruff>=0.5.0",
+]
+
+[project.scripts]
+pixel-apng = "pixel_apng.cli:app"
+pixel-apng-gui = "pixel_apng.gui:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pixel_apng"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+packages = ["pixel_apng"]

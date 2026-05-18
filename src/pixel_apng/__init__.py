@@ -1,0 +1,1 @@
+"""Pixel APNG generator package."""
