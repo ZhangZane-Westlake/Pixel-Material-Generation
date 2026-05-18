@@ -43,18 +43,11 @@ class MotionName(StrEnum):
 
 
 class SubjectName(StrEnum):
-    """Supported subject templates."""
+    """Supported subject categories."""
 
-    CAT = "cat"
-    DOG = "dog"
+    OBJECT = "object"
     TEXT = "text"
     PROGRESS_BAR = "progress_bar"
-    STAR = "star"
-    CLOUD = "cloud"
-    HEART = "heart"
-    ARROW = "arrow"
-    BOX = "box"
-    MICROWAVE = "microwave"
     UNKNOWN = "unknown"
 
 
@@ -77,7 +70,7 @@ class RegionSpec(BaseModel):
 
     name: RegionName
     content: str
-    subject: SubjectName = SubjectName.UNKNOWN
+    subject: SubjectName = SubjectName.OBJECT
     motion: MotionName = MotionName.NONE
 
 

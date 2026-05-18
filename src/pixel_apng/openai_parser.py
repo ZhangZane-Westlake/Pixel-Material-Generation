@@ -16,13 +16,16 @@ Return only valid JSON matching the schema.
 
 Use these enums when possible:
 - regions: top, middle, bottom, left, right, center
-- subjects: cat, dog, text, progress_bar, star, cloud, heart, arrow, box, unknown
+- subjects: object, text, progress_bar, unknown
 - motions: run, bounce, blink, fill, pulse, spin, none
 - palettes: green, blue, red, pink, yellow, purple, retro
 
 Prefer explicit layout from the prompt. For example, "上方" maps to top,
 "下方" maps to bottom, "左侧" maps to left, and "中间" maps to center.
 If the prompt mentions a progress/loading bar, use subject progress_bar and motion fill.
+For visible entities such as animals, robots, plants, tools, weather objects,
+or fantasy props, use subject object and keep the concrete object phrase inside
+content so it can be rendered procedurally.
 Keep the scene simple enough for procedural pixel rendering.
 """.strip()
 

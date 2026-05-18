@@ -10,9 +10,9 @@ from pixel_apng.renderer import PixelRenderer
 
 
 def test_renderer_and_exporter_create_apng(tmp_path: Path) -> None:
-    scene = LocalPromptParser().parse("上方是一只奔跑的小猫，下方是进度条，色调为绿色")
+    scene = LocalPromptParser().parse("上方是一台旋转的机器人，下方是进度条，色调为绿色")
     frames = PixelRenderer().render_frames(scene)
-    output_path = tmp_path / "cat_progress.apng"
+    output_path = tmp_path / "robot_progress.apng"
 
     PixelExporter().save_apng(frames, output_path, scene.animation.fps)
 
@@ -28,3 +28,12 @@ def test_renderer_and_exporter_create_apng(tmp_path: Path) -> None:
         )
         assert image.size == expected_size
         assert image.mode == "RGBA"
+
+
+def test_renderer_supports_arbitrary_prompt_objects() -> None:
+    scene = LocalPromptParser().parse("中间是一朵会弹跳的蘑菇，色调为黄色")
+    frames = PixelRenderer().render_frames(scene)
+
+    assert len(frames) > 1
+    first_frame = frames[0]
+    assert first_frame.getchannel("A").getbbox() is not None

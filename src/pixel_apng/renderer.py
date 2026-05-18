@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from enum import StrEnum
+from hashlib import sha256
 from pathlib import Path
 from typing import Final
 
@@ -18,6 +21,8 @@ from pixel_apng.models import (
 
 Palette = dict[str, tuple[int, int, int, int]]
 Bounds = tuple[int, int, int, int]
+Grid = list[list[int]]
+
 
 PALETTES: dict[PaletteName, Palette] = {
     PaletteName.GREEN: {
@@ -73,6 +78,100 @@ _REGION_BOUNDS: Final[dict[RegionName, tuple[float, float, float, float]]] = {
     RegionName.CENTER: (0.2, 0.2, 0.8, 0.8),
 }
 
+_CREATURE_KEYWORDS: Final[tuple[str, ...]] = (
+    "猫",
+    "dog",
+    "狗",
+    "兔",
+    "fox",
+    "熊",
+    "monster",
+    "宠物",
+    "dragon",
+    "龙",
+    "bird",
+    "鸟",
+)
+_MACHINE_KEYWORDS: Final[tuple[str, ...]] = (
+    "robot",
+    "机器人",
+    "机甲",
+    "电脑",
+    "screen",
+    "monitor",
+    "microwave",
+    "tv",
+    "console",
+    "camera",
+)
+_CELESTIAL_KEYWORDS: Final[tuple[str, ...]] = (
+    "star",
+    "星",
+    "sun",
+    "moon",
+    "planet",
+    "comet",
+    "太阳",
+    "月亮",
+)
+_WEATHER_KEYWORDS: Final[tuple[str, ...]] = (
+    "cloud",
+    "云",
+    "rain",
+    "storm",
+    "snow",
+    "lightning",
+    "风",
+    "weather",
+)
+_PLANT_KEYWORDS: Final[tuple[str, ...]] = (
+    "flower",
+    "tree",
+    "leaf",
+    "plant",
+    "mushroom",
+    "草",
+    "花",
+    "树",
+    "蘑菇",
+)
+
+
+class ObjectMotif(StrEnum):
+    """High-level visual family for procedural objects."""
+
+    ABSTRACT = "abstract"
+    CELESTIAL = "celestial"
+    CREATURE = "creature"
+    MACHINE = "machine"
+    PLANT = "plant"
+    WEATHER = "weather"
+
+
+class DetailPattern(StrEnum):
+    """Surface pattern used to break up flat silhouettes."""
+
+    BAND = "band"
+    DOT = "dot"
+    NONE = "none"
+    STRIPE = "stripe"
+
+
+@dataclass(frozen=True)
+class ProceduralObjectSpec:
+    """Deterministic prompt-derived blueprint for a rendered object."""
+
+    label: str
+    motif: ObjectMotif
+    pattern: DetailPattern
+    width: int
+    height: int
+    eye_count: int
+    appendage_length: int
+    bob_amplitude: int
+    sway_pixels: int
+    seed: int
+
 
 class PixelRenderer:
     """Render scene specs into raster frames."""
@@ -86,6 +185,7 @@ class PixelRenderer:
         return frames
 
     def _render_frame(self, scene: SceneSpec, frame_index: int, total_frames: int) -> Image.Image:
+        """Render a single animation frame."""
         width = scene.canvas.width
         height = scene.canvas.height
         palette = PALETTES[scene.palette.name]
@@ -104,15 +204,16 @@ class PixelRenderer:
         palette: Palette,
         frame_index: int,
     ) -> None:
+        """Draw the animated transparent background."""
         if not scene.canvas.transparent_background:
             draw.rectangle([0, 0, scene.canvas.width, scene.canvas.height], fill=palette["bg"])
         if scene.palette.name == PaletteName.RETRO:
-            for y in range(frame_index % 2, scene.canvas.height, 4):
-                draw.line([0, y, scene.canvas.width, y], fill=(255, 255, 255, 18))
-        else:
-            sparkle_x = (frame_index * 7) % scene.canvas.width
-            sparkle_y = 12 + (frame_index * 3) % max(1, scene.canvas.height // 2)
-            draw.point((sparkle_x, sparkle_y), fill=palette["white"])
+            for y_coord in range(frame_index % 2, scene.canvas.height, 4):
+                draw.line([0, y_coord, scene.canvas.width, y_coord], fill=(255, 255, 255, 18))
+            return
+        sparkle_x = (frame_index * 7) % scene.canvas.width
+        sparkle_y = 12 + (frame_index * 3) % max(1, scene.canvas.height // 2)
+        draw.point((sparkle_x, sparkle_y), fill=palette["white"])
 
     def _draw_region(
         self,
@@ -123,27 +224,18 @@ class PixelRenderer:
         frame_index: int,
         total_frames: int,
     ) -> None:
+        """Draw one scene region according to its semantic type."""
         bounds = self._region_box(scene, region.name)
         if region.subject == SubjectName.PROGRESS_BAR:
             self._draw_progress_bar(draw, bounds, palette, frame_index, total_frames)
-        elif region.subject == SubjectName.TEXT:
+            return
+        if region.subject == SubjectName.TEXT:
             self._draw_text_block(draw, bounds, palette, region.content, frame_index, region.motion)
-        elif region.subject == SubjectName.CAT:
-            self._draw_cat(draw, bounds, palette, frame_index, region.motion)
-        elif region.subject == SubjectName.DOG:
-            self._draw_dog(draw, bounds, palette, frame_index)
-        elif region.subject == SubjectName.STAR:
-            self._draw_star(draw, bounds, palette, frame_index)
-        elif region.subject == SubjectName.CLOUD:
-            self._draw_cloud(draw, bounds, palette, frame_index)
-        elif region.subject == SubjectName.HEART:
-            self._draw_heart(draw, bounds, palette, frame_index)
-        elif region.subject == SubjectName.ARROW:
-            self._draw_arrow(draw, bounds, palette, frame_index)
-        else:
-            self._draw_box(draw, bounds, palette, frame_index, region.motion)
+            return
+        self._draw_prompt_object(draw, bounds, palette, region.content, frame_index, region.motion)
 
     def _region_box(self, scene: SceneSpec, region_name: RegionName) -> Bounds:
+        """Convert a named region into pixel-space bounds."""
         left_ratio, top_ratio, right_ratio, bottom_ratio = _REGION_BOUNDS[region_name]
         width = scene.canvas.width
         height = scene.canvas.height
@@ -162,6 +254,7 @@ class PixelRenderer:
         frame_index: int,
         total_frames: int,
     ) -> None:
+        """Draw a filling progress bar."""
         left, top, right, bottom = bounds
         draw.rectangle([left, top, right, bottom], outline=palette["accent_dark"], width=2)
         progress = frame_index / max(1, total_frames - 1)
@@ -179,6 +272,7 @@ class PixelRenderer:
         frame_index: int,
         motion: MotionName,
     ) -> None:
+        """Draw a blocky text placeholder."""
         left, top, right, bottom = bounds
         draw.rectangle([left, top, right, bottom], outline=palette["accent_dark"], width=1)
         offset = (1 if motion == MotionName.BOUNCE else 0) + (1 if frame_index % 6 in {1, 2} else 0)
@@ -189,153 +283,377 @@ class PixelRenderer:
             char_x = left + 4 + index * 4
             draw.rectangle([char_x, text_y, char_x + 2, text_y + 3], fill=palette["white"])
 
-    def _draw_cat(
+    def _draw_prompt_object(
         self,
         draw: ImageDraw.ImageDraw,
         bounds: Bounds,
         palette: Palette,
+        content: str,
         frame_index: int,
         motion: MotionName,
     ) -> None:
-        left, top, right, bottom = bounds
-        phase = frame_index % 4
-        x = left + (right - left) // 4 + (frame_index % 3)
-        y = top + (bottom - top) // 4 + (1 if phase in {1, 2} else 0)
-        self._draw_moving_body(draw, [x, y, x + 18, y + 12], palette, phase, motion)
+        """Render a procedural object derived from the region content."""
+        spec = self._build_object_spec(content, motion)
+        grid = self._build_sprite_grid(spec)
+        self._draw_motion_trail(draw, bounds, palette, spec, frame_index, motion)
+        self._draw_grid_sprite(draw, bounds, palette, grid, spec, frame_index)
 
-    def _draw_dog(
-        self, draw: ImageDraw.ImageDraw, bounds: Bounds, palette: Palette, frame_index: int
-    ) -> None:
-        left, top, right, bottom = bounds
-        bounce = 1 if frame_index % 4 in {0, 1} else 0
-        x = left + (right - left) // 4
-        y = top + (bottom - top) // 4 + bounce
-        draw.rectangle([x, y + 4, x + 18, y + 12], fill=palette["accent"])
-        draw.rectangle([x + 14, y + 5, x + 22, y + 11], fill=palette["accent"])
-        draw.rectangle([x + 18, y + 8, x + 22, y + 14], fill=palette["accent_dark"])
-        for leg_x in (x + 2, x + 8, x + 14):
-            draw.rectangle([leg_x, y + 11, leg_x + 2, y + 16], fill=palette["accent_dark"])
-
-    def _draw_star(
-        self, draw: ImageDraw.ImageDraw, bounds: Bounds, palette: Palette, frame_index: int
-    ) -> None:
-        left, top, right, bottom = bounds
-        center_x = (left + right) // 2
-        center_y = (top + bottom) // 2
-        radius = 4 + (frame_index % 3)
-        points = [
-            (center_x, center_y - radius),
-            (center_x + radius // 2, center_y - radius // 2),
-            (center_x + radius, center_y),
-            (center_x + radius // 2, center_y + radius // 2),
-            (center_x, center_y + radius),
-            (center_x - radius // 2, center_y + radius // 2),
-            (center_x - radius, center_y),
-            (center_x - radius // 2, center_y - radius // 2),
-        ]
-        draw.polygon(points, fill=palette["accent"])
-
-    def _draw_cloud(
-        self, draw: ImageDraw.ImageDraw, bounds: Bounds, palette: Palette, frame_index: int
-    ) -> None:
-        left, top, _right, _bottom = bounds
-        offset = 1 if frame_index % 6 in {2, 3} else 0
-        cloud_parts = [
-            [left + 6, top + 6 + offset, left + 18, top + 18 + offset],
-            [left + 14, top + 2 + offset, left + 28, top + 16 + offset],
-            [left + 26, top + 6 + offset, left + 40, top + 18 + offset],
-        ]
-        for part in cloud_parts:
-            draw.ellipse(part, fill=palette["white"])
-        draw.rectangle(
-            [left + 10, top + 12 + offset, left + 36, top + 22 + offset], fill=palette["white"]
+    def _build_object_spec(self, content: str, motion: MotionName) -> ProceduralObjectSpec:
+        """Convert free-form content into a deterministic rendering blueprint."""
+        normalized_content = content.strip() or "object"
+        seed = self._seed_from_text(normalized_content)
+        motif = self._infer_object_motif(normalized_content)
+        bob_amplitude = 2 if motion in {MotionName.BOUNCE, MotionName.RUN, MotionName.SPIN} else 1
+        sway_pixels = 3 if motion == MotionName.RUN else 2 if motion == MotionName.SPIN else 1
+        return ProceduralObjectSpec(
+            label=normalized_content,
+            motif=motif,
+            pattern=self._pick_pattern(seed),
+            width=8 + seed % 5,
+            height=7 + (seed // 3) % 5,
+            eye_count=2 if motif in {ObjectMotif.CREATURE, ObjectMotif.MACHINE} else 1,
+            appendage_length=2 + (seed // 11) % 4,
+            bob_amplitude=bob_amplitude,
+            sway_pixels=sway_pixels,
+            seed=seed,
         )
 
-    def _draw_heart(
-        self, draw: ImageDraw.ImageDraw, bounds: Bounds, palette: Palette, frame_index: int
-    ) -> None:
-        left, top, right, bottom = bounds
-        pulse = 1 if frame_index % 4 in {0, 1} else 0
-        mid_x = (left + right) // 2
-        mid_y = (top + bottom) // 2
-        draw.polygon(
-            [
-                (mid_x, mid_y + 8 + pulse),
-                (mid_x - 10, mid_y),
-                (mid_x - 14, mid_y - 6),
-                (mid_x - 8, mid_y - 12),
-                (mid_x, mid_y - 6),
-                (mid_x + 8, mid_y - 12),
-                (mid_x + 14, mid_y - 6),
-                (mid_x + 10, mid_y),
-            ],
-            fill=palette["accent"],
-        )
+    def _seed_from_text(self, content: str) -> int:
+        """Hash content into a stable positive integer seed."""
+        digest = sha256(content.encode("utf-8")).hexdigest()
+        return int(digest[:12], 16)
 
-    def _draw_arrow(
-        self, draw: ImageDraw.ImageDraw, bounds: Bounds, palette: Palette, frame_index: int
-    ) -> None:
-        left, top, right, bottom = bounds
-        center_y = (top + bottom) // 2
-        offset = frame_index % 3
-        draw.line(
-            [left + 4 + offset, center_y, right - 10 + offset, center_y],
-            fill=palette["accent"],
-            width=3,
-        )
-        draw.polygon(
-            [
-                (right - 10 + offset, center_y),
-                (right - 18 + offset, center_y - 6),
-                (right - 18 + offset, center_y + 6),
-            ],
-            fill=palette["accent"],
-        )
+    def _infer_object_motif(self, content: str) -> ObjectMotif:
+        """Infer a visual motif from prompt keywords."""
+        lowered = content.lower()
+        if self._contains_keyword(content, lowered, _CREATURE_KEYWORDS):
+            return ObjectMotif.CREATURE
+        if self._contains_keyword(content, lowered, _MACHINE_KEYWORDS):
+            return ObjectMotif.MACHINE
+        if self._contains_keyword(content, lowered, _CELESTIAL_KEYWORDS):
+            return ObjectMotif.CELESTIAL
+        if self._contains_keyword(content, lowered, _WEATHER_KEYWORDS):
+            return ObjectMotif.WEATHER
+        if self._contains_keyword(content, lowered, _PLANT_KEYWORDS):
+            return ObjectMotif.PLANT
+        return ObjectMotif.ABSTRACT
 
-    def _draw_box(
+    def _contains_keyword(self, content: str, lowered: str, keywords: tuple[str, ...]) -> bool:
+        """Return whether any motif keyword is present."""
+        return any(keyword in content or keyword.lower() in lowered for keyword in keywords)
+
+    def _pick_pattern(self, seed: int) -> DetailPattern:
+        """Choose a repeatable surface pattern from the object seed."""
+        patterns = (
+            DetailPattern.NONE,
+            DetailPattern.STRIPE,
+            DetailPattern.DOT,
+            DetailPattern.BAND,
+        )
+        return patterns[seed % len(patterns)]
+
+    def _build_sprite_grid(self, spec: ProceduralObjectSpec) -> Grid:
+        """Construct a pixel sprite grid for the given blueprint."""
+        grid: Grid = [[0 for _ in range(18)] for _ in range(18)]
+        if spec.motif == ObjectMotif.CREATURE:
+            self._paint_creature(grid, spec)
+        elif spec.motif == ObjectMotif.MACHINE:
+            self._paint_machine(grid, spec)
+        elif spec.motif == ObjectMotif.CELESTIAL:
+            self._paint_celestial(grid, spec)
+        elif spec.motif == ObjectMotif.WEATHER:
+            self._paint_weather(grid, spec)
+        elif spec.motif == ObjectMotif.PLANT:
+            self._paint_plant(grid, spec)
+        else:
+            self._paint_abstract(grid, spec)
+        self._apply_pattern(grid, spec.pattern)
+        return grid
+
+    def _paint_creature(self, grid: Grid, spec: ProceduralObjectSpec) -> None:
+        """Paint a creature-like sprite with head, body, and limbs."""
+        center_x = 9
+        head_center_y = 6
+        body_center_y = 10
+        self._paint_ellipse(grid, center_x, body_center_y, spec.width // 2, spec.height // 2, 1)
+        self._paint_ellipse(grid, center_x + 2, head_center_y, spec.width // 3, spec.height // 3, 1)
+        ear_height = 2 + spec.seed % 2
+        self._paint_line(
+            grid,
+            center_x + 1,
+            head_center_y - 3,
+            center_x,
+            head_center_y - 3 - ear_height,
+            2,
+        )
+        self._paint_line(
+            grid,
+            center_x + 4,
+            head_center_y - 3,
+            center_x + 5,
+            head_center_y - 3 - ear_height,
+            2,
+        )
+        for leg_offset in (-(spec.width // 3), 0, spec.width // 3):
+            leg_x = center_x + leg_offset
+            self._paint_line(grid, leg_x, body_center_y + spec.height // 2 - 1, leg_x, 16, 2)
+        self._paint_line(
+            grid,
+            center_x - spec.width // 2 - 1,
+            body_center_y,
+            center_x - spec.width // 2 - 1 - spec.appendage_length,
+            body_center_y - 1,
+            2,
+        )
+        for eye_index in range(spec.eye_count):
+            eye_x = center_x + eye_index * 2 + 1
+            self._paint_point(grid, eye_x, head_center_y, 3)
+
+    def _paint_machine(self, grid: Grid, spec: ProceduralObjectSpec) -> None:
+        """Paint a machine-like sprite with a screen and antenna."""
+        left = 9 - spec.width // 2
+        top = 6
+        right = left + spec.width
+        bottom = top + spec.height
+        self._paint_rect(grid, left, top, right, bottom, 1)
+        self._paint_rect(grid, left + 2, top + 2, right - 2, bottom - 3, 2)
+        self._paint_rect(grid, left + 3, top + 3, right - 3, top + 6, 3)
+        antenna_height = 2 + spec.appendage_length
+        self._paint_line(grid, 9, top - 1, 9, top - antenna_height, 2)
+        self._paint_point(grid, 9, top - antenna_height - 1, 3)
+        self._paint_line(grid, left - 1, top + 4, left - 3, top + 2, 2)
+        self._paint_line(grid, right + 1, top + 4, right + 3, top + 2, 2)
+        self._paint_line(grid, left + 2, bottom + 1, left + 1, bottom + 3, 2)
+        self._paint_line(grid, right - 2, bottom + 1, right - 1, bottom + 3, 2)
+
+    def _paint_celestial(self, grid: Grid, spec: ProceduralObjectSpec) -> None:
+        """Paint a star, moon, or other celestial sprite."""
+        center_x = 9
+        center_y = 9
+        radius = 3 + spec.seed % 3
+        self._paint_ellipse(grid, center_x, center_y, radius, radius, 1)
+        for delta in range(-radius - 1, radius + 2):
+            if delta != 0:
+                self._paint_point(grid, center_x + delta, center_y, 2)
+                self._paint_point(grid, center_x, center_y + delta, 2)
+        if spec.seed % 2 == 0:
+            self._paint_line(grid, center_x - 4, center_y - 4, center_x + 4, center_y + 4, 2)
+            self._paint_line(grid, center_x - 4, center_y + 4, center_x + 4, center_y - 4, 2)
+        self._paint_point(grid, center_x, center_y, 3)
+
+    def _paint_weather(self, grid: Grid, spec: ProceduralObjectSpec) -> None:
+        """Paint a cloud-like or storm-like sprite."""
+        self._paint_ellipse(grid, 6, 8, 3, 3, 3)
+        self._paint_ellipse(grid, 10, 6, 4, 3, 3)
+        self._paint_ellipse(grid, 13, 8, 3, 3, 3)
+        self._paint_rect(grid, 5, 8, 14, 11, 3)
+        if spec.seed % 2 == 0:
+            self._paint_line(grid, 8, 12, 7, 15, 2)
+            self._paint_line(grid, 11, 12, 10, 15, 2)
+        else:
+            self._paint_line(grid, 10, 11, 8, 14, 2)
+            self._paint_line(grid, 8, 14, 11, 14, 2)
+            self._paint_line(grid, 11, 14, 9, 17, 2)
+
+    def _paint_plant(self, grid: Grid, spec: ProceduralObjectSpec) -> None:
+        """Paint a plant-like sprite with stem and canopy."""
+        stem_height = 5 + spec.seed % 3
+        self._paint_line(grid, 9, 16, 9, 16 - stem_height, 2)
+        self._paint_line(grid, 9, 12, 6, 10, 2)
+        self._paint_line(grid, 9, 11, 12, 9, 2)
+        cap_radius = 4 if "蘑菇" in spec.label or "mushroom" in spec.label.lower() else 3
+        self._paint_ellipse(grid, 9, 7, cap_radius + 2, cap_radius, 1)
+        self._paint_rect(grid, 5, 7, 13, 8, 1)
+        self._paint_point(grid, 7, 7, 3)
+        self._paint_point(grid, 11, 7, 3)
+
+    def _paint_abstract(self, grid: Grid, spec: ProceduralObjectSpec) -> None:
+        """Paint a generic prompt-derived abstract object."""
+        center_x = 9
+        center_y = 9
+        radius_x = 3 + spec.width // 3
+        radius_y = 3 + spec.height // 3
+        self._paint_ellipse(grid, center_x, center_y, radius_x, radius_y, 1)
+        if spec.seed % 2 == 0:
+            self._paint_rect(grid, center_x - 2, center_y - 5, center_x + 2, center_y - 3, 2)
+        else:
+            self._paint_line(grid, center_x - 5, center_y, center_x + 5, center_y, 2)
+            self._paint_line(grid, center_x, center_y - 5, center_x, center_y + 5, 2)
+        self._paint_point(grid, center_x, center_y, 3)
+
+    def _apply_pattern(self, grid: Grid, pattern: DetailPattern) -> None:
+        """Overlay a simple internal pattern onto the filled sprite."""
+        if pattern == DetailPattern.NONE:
+            return
+        for y_coord, row in enumerate(grid):
+            for x_coord, value in enumerate(row):
+                if value != 1:
+                    continue
+                if pattern == DetailPattern.STRIPE and (x_coord + y_coord) % 4 == 0:
+                    row[x_coord] = 2
+                elif pattern == DetailPattern.DOT and x_coord % 3 == 0 and y_coord % 3 == 0:
+                    row[x_coord] = 3
+                elif pattern == DetailPattern.BAND and 6 <= y_coord <= 8:
+                    row[x_coord] = 2
+
+    def _draw_motion_trail(
         self,
         draw: ImageDraw.ImageDraw,
         bounds: Bounds,
         palette: Palette,
+        spec: ProceduralObjectSpec,
         frame_index: int,
         motion: MotionName,
     ) -> None:
+        """Draw a lightweight motion cue behind the object."""
         left, top, right, bottom = bounds
-        draw.rectangle([left, top, right, bottom], outline=palette["accent_dark"], width=2)
-        if motion == MotionName.PULSE:
-            inset = 1 if frame_index % 4 in {0, 1} else 3
+        center_y = (top + bottom) // 2
+        if motion == MotionName.RUN:
+            trail_width = 4 + spec.appendage_length
+            start_x = max(left + 2, right // 2 - trail_width)
+            draw.line(
+                [start_x, center_y + 4, start_x - 6, center_y + 2],
+                fill=palette["accent_dark"],
+                width=2,
+            )
+        elif motion == MotionName.SPIN:
+            draw.arc(
+                [left + 4, top + 4, right - 4, bottom - 4],
+                start=20,
+                end=320,
+                fill=palette["accent_dark"],
+            )
+        elif motion == MotionName.PULSE and frame_index % 4 in {0, 1}:
             draw.rectangle(
-                [left + inset, top + inset, right - inset, bottom - inset],
+                [left + 2, top + 2, right - 2, bottom - 2],
                 outline=palette["accent"],
+                width=1,
             )
 
-    def _draw_moving_body(
+    def _draw_grid_sprite(
         self,
         draw: ImageDraw.ImageDraw,
-        body: list[int],
+        bounds: Bounds,
         palette: Palette,
-        phase: int,
-        motion: MotionName,
+        grid: Grid,
+        spec: ProceduralObjectSpec,
+        frame_index: int,
     ) -> None:
-        x1, y1, x2, y2 = body
-        draw.rounded_rectangle(body, radius=4, fill=palette["accent"])
-        draw.rectangle([x2 - 2, y1 + 2, x2 + 4, y1 + 8], fill=palette["accent"])
-        draw.rectangle([x2, y1 - 2, x2 + 2, y1 + 2], fill=palette["accent_dark"])
-        draw.rectangle([x2 + 3, y1 - 2, x2 + 5, y1 + 2], fill=palette["accent_dark"])
-        leg_offset = 2 if phase in {0, 3} else 0
-        leg_boxes = [
-            [x1 + 2, y2 - 1, x1 + 4, y2 + 4 + leg_offset],
-            [x1 + 8, y2 - 1, x1 + 10, y2 + 4 - leg_offset],
-            [x1 + 14, y2 - 1, x1 + 16, y2 + 4 + leg_offset],
-        ]
-        for leg_box in leg_boxes:
-            draw.rectangle(leg_box, fill=palette["accent_dark"])
-        if motion == MotionName.RUN:
-            draw.line([x1 - 3, y1 + 6, x1 - 8, y1 + 4], fill=palette["accent_dark"], width=2)
-        elif motion == MotionName.BOUNCE:
-            draw.line([x1 - 3, y1 + 6, x1 - 7, y1 + 8], fill=palette["accent_dark"], width=2)
-        else:
-            draw.line([x1 - 3, y1 + 6, x1 - 7, y1 + 6], fill=palette["accent_dark"], width=2)
+        """Rasterize a low-resolution sprite grid into the region bounds."""
+        left, top, right, bottom = bounds
+        grid_height = len(grid)
+        grid_width = len(grid[0]) if grid else 0
+        usable_width = max(1, right - left - 4)
+        usable_height = max(1, bottom - top - 4)
+        cell_size = max(1, min(usable_width // grid_width, usable_height // grid_height))
+        sprite_width = grid_width * cell_size
+        sprite_height = grid_height * cell_size
+        sway = self._compute_horizontal_sway(spec, frame_index)
+        bob = self._compute_vertical_bob(spec, frame_index)
+        origin_x = left + (usable_width - sprite_width) // 2 + 2 + sway
+        origin_y = top + (usable_height - sprite_height) // 2 + 2 + bob
+        color_map = {1: palette["accent"], 2: palette["accent_dark"], 3: palette["white"]}
+        for y_coord, row in enumerate(grid):
+            for x_coord, value in enumerate(row):
+                if value == 0:
+                    continue
+                pixel_left = origin_x + x_coord * cell_size
+                pixel_top = origin_y + y_coord * cell_size
+                draw.rectangle(
+                    [pixel_left, pixel_top, pixel_left + cell_size - 1, pixel_top + cell_size - 1],
+                    fill=color_map[value],
+                )
+
+    def _compute_horizontal_sway(self, spec: ProceduralObjectSpec, frame_index: int) -> int:
+        """Return the current frame's horizontal sway."""
+        phase = frame_index % 6
+        if phase in {0, 1}:
+            return -spec.sway_pixels
+        if phase in {3, 4}:
+            return spec.sway_pixels
+        return 0
+
+    def _compute_vertical_bob(self, spec: ProceduralObjectSpec, frame_index: int) -> int:
+        """Return the current frame's vertical bob offset."""
+        phase = frame_index % 6
+        if phase in {1, 2}:
+            return -spec.bob_amplitude
+        if phase in {4, 5}:
+            return spec.bob_amplitude
+        return 0
+
+    def _paint_rect(
+        self,
+        grid: Grid,
+        left: int,
+        top: int,
+        right: int,
+        bottom: int,
+        color: int,
+    ) -> None:
+        """Fill a rectangle on the sprite grid."""
+        for y_coord in range(max(0, top), min(len(grid), bottom + 1)):
+            row = grid[y_coord]
+            for x_coord in range(max(0, left), min(len(row), right + 1)):
+                row[x_coord] = color
+
+    def _paint_ellipse(
+        self,
+        grid: Grid,
+        center_x: int,
+        center_y: int,
+        radius_x: int,
+        radius_y: int,
+        color: int,
+    ) -> None:
+        """Fill an ellipse on the sprite grid."""
+        safe_radius_x = max(1, radius_x)
+        safe_radius_y = max(1, radius_y)
+        for y_coord, row in enumerate(grid):
+            for x_coord in range(len(row)):
+                distance = ((x_coord - center_x) ** 2) / (safe_radius_x**2) + (
+                    (y_coord - center_y) ** 2
+                ) / (safe_radius_y**2)
+                if distance <= 1:
+                    row[x_coord] = color
+
+    def _paint_line(
+        self,
+        grid: Grid,
+        start_x: int,
+        start_y: int,
+        end_x: int,
+        end_y: int,
+        color: int,
+    ) -> None:
+        """Draw a Bresenham-style line on the sprite grid."""
+        delta_x = abs(end_x - start_x)
+        delta_y = -abs(end_y - start_y)
+        step_x = 1 if start_x < end_x else -1
+        step_y = 1 if start_y < end_y else -1
+        error = delta_x + delta_y
+        current_x = start_x
+        current_y = start_y
+        while True:
+            self._paint_point(grid, current_x, current_y, color)
+            if current_x == end_x and current_y == end_y:
+                break
+            doubled_error = 2 * error
+            if doubled_error >= delta_y:
+                error += delta_y
+                current_x += step_x
+            if doubled_error <= delta_x:
+                error += delta_x
+                current_y += step_y
+
+    def _paint_point(self, grid: Grid, x_coord: int, y_coord: int, color: int) -> None:
+        """Set a single pixel on the sprite grid if it is in bounds."""
+        if y_coord < 0 or y_coord >= len(grid):
+            return
+        row = grid[y_coord]
+        if x_coord < 0 or x_coord >= len(row):
+            return
+        row[x_coord] = color
 
 
 class PixelExporter:

@@ -13,9 +13,10 @@ into a transparent pixel-art APNG you can drop into video editing software.
 Pipeline:
 
 1. Parse the prompt into a structured `SceneSpec` using a provider model.
-2. Render pixel frames locally with Pillow.
-3. Export the result as APNG.
-4. Open the result in a native macOS GUI when needed.
+2. Convert each prompt clause into a procedural object blueprint.
+3. Render pixel frames locally with Pillow.
+4. Export the result as APNG.
+5. Open the result in a native macOS GUI when needed.
 
 ## Default provider
 
@@ -54,13 +55,13 @@ Only the provider you use needs a key.
 CLI:
 
 ```bash
-pixel-apng generate "上方是一只奔跑的小猫，下方是进度条，色调为绿色" --output output/cat_progress.apng
+pixel-apng generate "上方是一台旋转的机器人，下方是进度条，色调为绿色" --output output/robot_progress.apng
 ```
 
 Use the local provider for offline testing:
 
 ```bash
-pixel-apng generate "上方是一只奔跑的小猫，下方是进度条，色调为绿色" --provider local --output output/cat_progress.apng
+pixel-apng generate "上方是一台旋转的机器人，下方是进度条，色调为绿色" --provider local --output output/robot_progress.apng
 ```
 
 GUI:
@@ -69,19 +70,29 @@ GUI:
 python -m pixel_apng.gui
 ```
 
+The GUI stores API key and Base URL settings locally in `~/.pixel-material-generator/settings.db`.
+The desktop UI uses a pixel-tool-inspired control deck with a dedicated preview stage,
+provider cards, prompt presets, and separate `生成器` / `设置` views so API configuration
+is not mixed into the generation workspace.
+
 ## Prompt understanding
 
 The structured scene parser supports:
 
 - Regions: `上方/top`, `下方/bottom`, `左侧/left`, `右侧/right`, `中间/center`
-- Subjects: cat, dog, progress bar, star, cloud, heart, arrow, text, box
+- Subjects: `object`, `progress_bar`, `text`
 - Motions: run, bounce, blink, fill, pulse, spin
 - Palettes: green, blue, red, pink, yellow, purple, retro
+
+For normal visual entities, the parser keeps the concrete object phrase in `content`
+and the renderer generates a procedural pixel object from that description instead of
+selecting from a fixed sprite library. This means prompts like `机器人`, `蘑菇`, `热气球`,
+or `机械鲸鱼` can render without adding new built-in assets first.
 
 Example:
 
 ```bash
-pixel-apng generate "左侧是一朵云，右侧是星星，中间是文字，色调为紫色" --provider local --output output/cloud_star_text.apng
+pixel-apng generate "左侧是一朵云，右侧是一颗星星，中间是文字，色调为紫色" --provider local --output output/cloud_star_text.apng
 ```
 
 ## Output
@@ -100,7 +111,7 @@ chmod +x mac/build.sh
 ./mac/build.sh
 ```
 
-The script creates an app bundle under `build/macos/` and a DMG in `dist/`.
+The packaged app uses the bundled virtual environment and does not install dependencies at launch.
 
 ## Development
 

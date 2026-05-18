@@ -37,13 +37,7 @@ _PALETTE_KEYWORDS: dict[PaletteName, tuple[str, ...]] = {
 }
 
 _SUBJECT_KEYWORDS: dict[SubjectName, tuple[str, ...]] = {
-    SubjectName.CAT: ("小猫", "猫", "kitten", "cat"),
-    SubjectName.DOG: ("小狗", "狗", "dog", "puppy"),
     SubjectName.PROGRESS_BAR: ("进度条", "加载条", "progress bar", "loading bar"),
-    SubjectName.STAR: ("星星", "星", "star"),
-    SubjectName.CLOUD: ("云朵", "云", "cloud"),
-    SubjectName.HEART: ("爱心", "心", "heart"),
-    SubjectName.ARROW: ("箭头", "arrow"),
     SubjectName.TEXT: ("文字", "文本", "字幕", "text", "label"),
 }
 
@@ -77,6 +71,7 @@ class LocalPromptParser(PromptParser):
         )
 
     def _parse_regions(self, prompt: str, lower_prompt: str) -> list[RegionSpec]:
+        """Parse explicit layout clauses into typed regions."""
         clauses = self._split_clauses(prompt, ("，", ",", "；", ";", "。", "."))
         regions: list[RegionSpec] = []
         for clause in clauses:
@@ -99,6 +94,7 @@ class LocalPromptParser(PromptParser):
         return self._deduplicate_regions(regions)
 
     def _fallback_regions(self, prompt: str, lower_prompt: str) -> list[RegionSpec]:
+        """Build a default centered scene when no layout keywords are present."""
         subject = self._match_subject(prompt, lower_prompt)
         motion = self._match_motion(prompt, lower_prompt)
         if subject == SubjectName.PROGRESS_BAR:
@@ -123,33 +119,39 @@ class LocalPromptParser(PromptParser):
         return regions
 
     def _match_palette(self, prompt: str, lower_prompt: str) -> PaletteName:
+        """Return the first palette keyword match in the prompt."""
         for palette_name, keywords in _PALETTE_KEYWORDS.items():
             if self._contains_any(prompt, lower_prompt, keywords):
                 return palette_name
         return PaletteName.GREEN
 
     def _match_region(self, prompt: str, lower_prompt: str) -> RegionName | None:
+        """Return the first layout region match in a clause."""
         for region_name, keywords in _REGION_KEYWORDS.items():
             if self._contains_any(prompt, lower_prompt, keywords):
                 return region_name
         return None
 
     def _match_subject(self, prompt: str, lower_prompt: str) -> SubjectName:
+        """Classify a clause as UI text, progress bar, or a generic object."""
         for subject_name, keywords in _SUBJECT_KEYWORDS.items():
             if self._contains_any(prompt, lower_prompt, keywords):
                 return subject_name
-        return SubjectName.BOX
+        return SubjectName.OBJECT
 
     def _match_motion(self, prompt: str, lower_prompt: str) -> MotionName:
+        """Return the first supported animation motion found in a clause."""
         for motion_name, keywords in _MOTION_KEYWORDS.items():
             if self._contains_any(prompt, lower_prompt, keywords):
                 return motion_name
         return MotionName.NONE
 
     def _contains_any(self, prompt: str, lower_prompt: str, keywords: Sequence[str]) -> bool:
+        """Return whether any keyword matches the original or lowered clause."""
         return any(keyword in prompt or keyword.lower() in lower_prompt for keyword in keywords)
 
     def _split_clauses(self, prompt: str, separators: Iterable[str]) -> list[str]:
+        """Split a prompt into clauses using multilingual punctuation."""
         clauses = [prompt]
         for separator in separators:
             next_clauses: list[str] = []
@@ -159,15 +161,32 @@ class LocalPromptParser(PromptParser):
         return [clause.strip() for clause in clauses if clause.strip()]
 
     def _clean_content(self, clause: str) -> str:
+        """Remove layout boilerplate while preserving the object description."""
         content = clause
         for keywords in _REGION_KEYWORDS.values():
             for keyword in keywords:
                 content = content.replace(keyword, "")
-        for removable in ("是", "有", "为", "色调", "tone", "palette"):
+        for keywords in _SUBJECT_KEYWORDS.values():
+            for keyword in keywords:
+                content = content.replace(keyword, "")
+        for removable in (
+            "一只",
+            "一个",
+            "一台",
+            "一朵",
+            "是一",
+            "是",
+            "有",
+            "为",
+            "色调",
+            "tone",
+            "palette",
+        ):
             content = content.replace(removable, "")
         return content.strip() or clause.strip()
 
     def _deduplicate_regions(self, regions: list[RegionSpec]) -> list[RegionSpec]:
+        """Keep the last region definition for each layout slot."""
         deduplicated: dict[RegionName, RegionSpec] = {}
         for region in regions:
             deduplicated[region.name] = region
